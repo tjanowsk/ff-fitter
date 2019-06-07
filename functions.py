@@ -106,7 +106,7 @@ class funfits:
 
             plt.plot(xv,yvfit)
             plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label='+'.join(['({1:.2f})$z^{0}$'.format(i,j) for i,j in enumerate(alphaval)]))
-            plt.title('$\chi^2/dof = {:.2e}, residue = {}$'.format(chisq,self.poly(self.poles[i],*alphaval)))
+            plt.title('$\chi^2/dof = {:.2e}, residue = {}$'.format(chisq,self.poly(self.z(self.poles[i])-self.z(0),*alphaval)))
             plt.legend()
             plt.savefig('{}/{}.pdf'.format(outfile,name))
             plt.show()
