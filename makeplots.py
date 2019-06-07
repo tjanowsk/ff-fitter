@@ -53,6 +53,7 @@ def getbounds(qsqlist, l, u):
     return (lb,ub)
 
 alist = list(range(3*numalpha)) + [2*numalpha] + list(range(3*numalpha, 4*numalpha - 1))
+alist = list(range(12))
 d2 = { item:funfits(item, d[item].ffnames, qsqlist, numalpha=numalpha, alphalist=alist, poles = d[item].pole) for item in d }
 
 ub = d[names[0]].ub
@@ -72,5 +73,6 @@ with open(resdir+'params','w') as f:
     for x in inparam:
         f.write(' '.join(map(str,x)))
         f.write('\n')
-np.savetxt(resdir+'alpha',np.concatenate([d2[item].fit_cv for item in names]))
+np.savetxt(resdir+'alpha',[np.concatenate([d2[item].fit_cv for item in names])], delimiter=',',fmt='%10.5f',header='{',footer='}',comments='')
 np.savetxt(resdir+'cov',d2[names[0]].covalpha(*[d2[item] for item in names[1:]]))
+#np.savetxt(resdir+'cov',d2[names[0]].covalpha(*[d2[item] for item in names[1:]]), newline='},{',delimiter=',',fmt='%10.5f',header='{{',footer='}}',comments='')

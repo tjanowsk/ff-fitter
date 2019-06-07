@@ -4,7 +4,7 @@ from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 
 class funfits:
-    def __init__(self, filename, names, qsqlist, numalpha=3, alphalist=None,  mB=5.28, poles=None, mV=0.77, pole=True):
+    def __init__(self, filename, names, qsqlist, numalpha=3, alphalist=None,  mB=5.28, poles=None, mV=0.77):
         self.names = names
         self.fflist = {x:0 for x in names}
         with h5py.File(filename,'r') as f:
@@ -20,7 +20,6 @@ class funfits:
             self.poles = poles
         self.mV = mV
         self.numalpha = numalpha
-        self.pole = pole
         if alphalist == None:
             self.alphalist = list(range(len(names)*numalpha))
         else:
@@ -28,10 +27,6 @@ class funfits:
 
     def printalphas(self, shift=0):
         return((ff,p,[x+shift for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)]]) for i,(p,ff) in enumerate(zip(self.poles, self.fflist)))
-        for i, (p, ff) in enumerate(zip(self.poles,self.fflist)):
-            alphas = self.alphalist[self.numalpha*i:self.numalpha*(i+1)] 
-            print(ff,p,[x+shift for x in alphas])
-
 
     def z(self,qsq):
         tplus = (self.mB+self.mV)**2
@@ -41,37 +36,48 @@ class funfits:
 
     def fitfun(self, qsq, *alpha):
         xargs = self.z(qsq)-self.z(0)
-        if(self.pole):
-            return self.piecewise(xargs, *alpha)/(1-qsq/self.mBstar**2)
-        else:
-            return self.piecewise(xargs, *alpha)
+        return self.piecewise(xargs, self.poly, *alpha)/(1-qsq/self.mBstar**2)
 
     def fitfun2(self, qsq, *alpha):
         xargs = self.z(qsq)-self.z(0)
-        if(self.pole):
-            return self.poly(xargs, *alpha)/(1-qsq/self.mBstar**2)
-        else:
-            return self.poly(xargs, *alpha)
+        return self.poly(xargs, *alpha)/(1-qsq/self.mBstar**2)
 
-    def poly(self, z, *alpha):
+    def fit2pole(self, qsq, *alpha):
+        return self.piecewise(qsq, self.fit2pole2, *alpha)
+
+    def fit2pole2(self, qsq, *alpha, piecenum=0):
+        #return (alpha[0] + alpha[1]*qsq**2 + alpha[2]*qsq**4)/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2)
+        res = alpha[0]/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2) 
+        if len(alpha) > 1:
+            for a in np.split(np.array(alpha[1:]),len(alpha[1:])//2):
+                res += a[0]/(1-qsq/a[1]**2)
+        return res
+
+    def poly(self, z, *alpha, piecenum=0):
         ''' Returns a polynomial \alpha_i z^i'''
         res = 0
         for i, an in enumerate(alpha):
             res += an*z**i
         return res
 
-    def piecewise(self, z, *alpha):
+    def piecewise(self, z, fun, *alpha):
         res = []
         for i in range(len(self.fflist)):
             numq = self.ub - self.lb #len(self.qsqlist)
             alphas = [alpha[x] for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)] ]
-            res.extend(self.poly(z[numq*i:numq*(i+1)], *alphas))
+            res.extend(fun(z[numq*i:numq*(i+1)], *alphas, piecenum=i))
         return np.array(res)
 
     def genfit(self, lb, ub, fitform='z'):
+        self.fitform = fitform
         if fitform=='z':
             fun = self.fitfun
             self.fitted = self.fitfun2
+            p0 = np.ones(max(self.alphalist) + 1) 
+        elif fitform=='2pole':
+            fun = self.fit2pole
+            self.fitted = self.fit2pole2
+            p0 = np.array(len(self.fflist)*[1.,1.,1000.])
         else:
             fun = self.piecewise
             self.fitted = self.poly
@@ -84,9 +90,9 @@ class funfits:
         #cov = np.mean([np.outer(v,v) for v in data], axis=0) - np.outer(sampleav, sampleav)
         cov = np.std(data, axis=0)
         self.fit = [curve_fit(fun, np.array(len(self.fflist)*self.qsqlist[lb:ub]), sample, \
-        p0=np.ones(max(self.alphalist) + 1) ,sigma = cov)[0] for sample in data]
+        p0=p0,sigma = cov)[0] for sample in data]
         self.fit_cv = curve_fit(fun, np.array(len(self.fflist)*self.qsqlist[lb:ub]), sampleav, \
-        p0=np.ones(max(self.alphalist) + 1) ,sigma = cov)[0]
+        p0=p0 ,sigma = cov)[0]
         return
 
     def plot(self, outfile):
@@ -105,8 +111,15 @@ class funfits:
             chisq = self.chisqdof(alphaval,cv,err,self.poles[i])
 
             plt.plot(xv,yvfit)
-            plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label='+'.join(['({1:.2f})$z^{0}$'.format(i,j) for i,j in enumerate(alphaval)]))
-            plt.title('$\chi^2/dof = {:.2e}, residue = {}$'.format(chisq,self.poly(self.z(self.poles[i])-self.z(0),*alphaval)))
+            if self.fitform == 'z':
+                plotlabel = '+'.join(['({1:.2f})$z^{0}$'.format(i,j) for i,j in enumerate(alphaval)])
+                plt.title('$\chi^2/dof = {:.2e}, residue = {}$'.format(chisq,self.poly(self.z(self.poles[i]**2)-self.z(0),*alphaval)))
+            else:
+                plotlabel = '{:.2f}/(1+q2/{:.2f}$^2$)'.format(alphaval[0], self.poles[i])
+                if len(alphaval) > 1:
+                    for a in np.split(np.array(alphaval[1:]), len(alphaval[1:])//2):
+                        plotlabel += ' + {:.2f}/(1+q2/{:.2f}$^2$)'.format(*a)
+            plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label=plotlabel)
             plt.legend()
             plt.savefig('{}/{}.pdf'.format(outfile,name))
             plt.show()
