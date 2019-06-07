@@ -27,6 +27,7 @@ class funfits:
             self.alphalist = alphalist
 
     def printalphas(self, shift=0):
+        return((ff,p,[x+shift for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)]]) for i,(p,ff) in enumerate(zip(self.poles, self.fflist)))
         for i, (p, ff) in enumerate(zip(self.poles,self.fflist)):
             alphas = self.alphalist[self.numalpha*i:self.numalpha*(i+1)] 
             print(ff,p,[x+shift for x in alphas])
@@ -92,20 +93,27 @@ class funfits:
         for i, name in enumerate(self.names):
             cv = np.mean(self.fflist[name], axis = 0)
             err = np.std(self.fflist[name], axis = 0)
-            plt.xlabel('q^2')
+            plt.xlabel('$q^2$')
             plt.ylabel(name)
-            plt.errorbar(self.qsqlist, cv ,yerr = err, fmt='.')
+            plt.errorbar(self.qsqlist, cv ,yerr = err, fmt='.', label='data')
             xv = np.arange(self.qsqlist[self.lb], self.qsqlist[self.ub-1]+0.1, 0.1)
             self.mBstar = np.array(len(xv)*[self.poles[i]])
             alphas = self.alphalist[self.numalpha*i:self.numalpha*(i+1)] 
             alphaval = [self.fit_cv[x] for x in alphas]
             yvfit = self.fitted(xv, *alphaval)
             yverr = np.std([self.fitted(xv,*([f[x] for x in alphas])) for f in self.fit], axis = 0)
+            chisq = self.chisqdof(alphaval,cv,err,self.poles[i])
 
             plt.plot(xv,yvfit)
-            plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label='fit')
+            plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label='+'.join(['({1:.2f})$z^{0}$'.format(i,j) for i,j in enumerate(alphaval)]))
+            plt.title('$\chi^2/dof = {:.2e}, residue = {}$'.format(chisq,self.poly(self.poles[i],*alphaval)))
+            plt.legend()
             plt.savefig('{}/{}.pdf'.format(outfile,name))
             plt.show()
+
+    def chisqdof(self, alphaval, cv, err, pole):
+        self.mBstar = np.array((self.ub-self.lb)*[pole])
+        return np.sum((self.fitted(np.array(self.qsqlist[self.lb:self.ub]),*alphaval) - cv[self.lb:self.ub])**2/err[self.lb:self.ub]**2) / (self.ub-self.lb-self.numalpha)
 
 
     def covalpha(self, *other):

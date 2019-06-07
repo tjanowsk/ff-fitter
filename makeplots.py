@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 from sys import argv, exit
+from os import makedirs
 
 if len(argv) != 4:
     print("Usage: python {} <hdf5 file> <fitform> <num parameters>".format(argv[0]))
@@ -54,12 +55,22 @@ def getbounds(qsqlist, l, u):
 alist = list(range(3*numalpha)) + [2*numalpha] + list(range(3*numalpha, 4*numalpha - 1))
 d2 = { item:funfits(item, d[item].ffnames, qsqlist, numalpha=numalpha, alphalist=alist, poles = d[item].pole) for item in d }
 
+ub = d[names[0]].ub
+plotdir = 'plots/{}_{}_q2max{}'.format(argv[2],argv[3],ub)
+makedirs(plotdir, exist_ok=True)
 shift = 0
+inparam = []
 for item in names:
-    d2[item].printalphas(shift)
+    inparam.extend(list(d2[item].printalphas(shift)))
     d2[item].genfit(*getbounds(qsqlist, d[item].lb, d[item].ub),fitform=argv[2])
-    d2[item].plot('plots/{}_{}'.format(argv[2],argv[3]))
-    shift += len(d2[item].alphalist)
+    d2[item].plot(plotdir)
+    shift += max(d2[item].alphalist) + 1
 
-np.savetxt('results/alpha_{}_{}'.format(argv[2],argv[3]),np.concatenate([d2[item].fit_cv for item in names]))
-np.savetxt('results/cov_{}_{}'.format(argv[2],argv[3]),d2[names[0]].covalpha(*[d2[item] for item in names[1:]]))
+resdir = 'results/{}_{}_q2max_{}/'.format(argv[2],argv[3],ub)
+makedirs(resdir,exist_ok=True)
+with open(resdir+'params','w') as f:
+    for x in inparam:
+        f.write(' '.join(map(str,x)))
+        f.write('\n')
+np.savetxt(resdir+'alpha',np.concatenate([d2[item].fit_cv for item in names]))
+np.savetxt(resdir+'cov',d2[names[0]].covalpha(*[d2[item] for item in names[1:]]))
