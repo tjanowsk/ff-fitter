@@ -4,14 +4,14 @@ from scipy.optimize import curve_fit
 from matplotlib import pyplot as plt
 
 class funfits:
-    def __init__(self, filename, names, qsqlist, numalpha=3, alphalist=None,  mB=5.28, poles=None, mV=0.77):
+    def __init__(self, filename, names, numalpha=3, alphalist=None,  mB=5.28, poles=None, mV=0.77):
         self.names = names
         self.fflist = {x:0 for x in names}
         with h5py.File(filename,'r') as f:
             self.data = f['results'][...]
             for n,m in zip(names, np.array_split(self.data, len(names), axis=1)):
                 self.fflist[n] = m
-        self.qsqlist = qsqlist
+            self.qsqlist = list(f['qsqlist'][...])
         self.mB = mB
         #self.mBstar = mBstar
         if poles == None:

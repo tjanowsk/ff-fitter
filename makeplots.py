@@ -13,12 +13,14 @@ if len(argv) != 4:
 
 inputfile = argv[1]
 numalpha = int(argv[3])
-qsqlist = [0.00001, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 12.0, 14.0, 16.0]
+#qsqlist = [0.00001, 1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 12.0, 14.0, 16.0]
 
 class par:
     def __init__(self, lb, ub):
         self.lb = float(lb)
         self.ub = float(ub)
+        self.mB = 0
+        self.alphalist = ''
         self.ffnames = []
         self.pole = []
 
@@ -27,14 +29,21 @@ def readinput(filename):
     names = []
     with open(filename,'r') as f:
         for line in f:
-            if len(line.split()) == 3:
-                name, lb, ub = line.split()
+            if line[0] == '#':
+                continue
+            if len(line.split()) == 5:
+                name, mB, alpha_list, lb, ub = line.split()
                 names.append(name)
                 d[name] = par(lb,ub)
+                d[name].mB = float(mB)
+                d[name].alpha_list = alpha_list
             if len(line.split()) == 2:
                 ff, pole = line.split()
                 d[name].ffnames.append(ff)
-                d[name].pole.append(float(pole))
+                if pole == 'inf':
+                    d[name].pole.append(np.inf)
+                else:
+                    d[name].pole.append(float(pole))
     return (d, names)
 
 d, names = readinput(inputfile)
@@ -53,8 +62,8 @@ def getbounds(qsqlist, l, u):
     return (lb,ub)
 
 alist = list(range(3*numalpha)) + [2*numalpha] + list(range(3*numalpha, 4*numalpha - 1))
-alist = list(range(12))
-d2 = { item:funfits(item, d[item].ffnames, qsqlist, numalpha=numalpha, alphalist=alist, poles = d[item].pole) for item in d }
+alist_star = list(range(6*numalpha))
+d2 = { item:funfits(item, d[item].ffnames, numalpha=numalpha, alphalist=eval(d[item].alpha_list), mB=d[item].mB, poles = d[item].pole) for item in d }
 
 ub = d[names[0]].ub
 plotdir = 'plots/{}_{}_q2max{}'.format(argv[2],argv[3],ub)
@@ -63,7 +72,7 @@ shift = 0
 inparam = []
 for item in names:
     inparam.extend(list(d2[item].printalphas(shift)))
-    d2[item].genfit(*getbounds(qsqlist, d[item].lb, d[item].ub),fitform=argv[2])
+    d2[item].genfit(*getbounds(d2[item].qsqlist, d[item].lb, d[item].ub),fitform=argv[2])
     d2[item].plot(plotdir)
     shift += max(d2[item].alphalist) + 1
 
