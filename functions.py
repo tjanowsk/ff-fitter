@@ -7,28 +7,28 @@ class funfits:
     def __init__(self, filename, names, numalpha=3, alphalist=None,  mB=5.28, poles=None, mV=0.77):
         self.names = names
         self.fflist = {x:0 for x in names}
-        with h5py.File(filename,'r') as f:
+        with h5py.File(filename, 'r') as f:
             self.data = f['results'][...]
-            for n,m in zip(names, np.array_split(self.data, len(names), axis=1)):
+            for n, m in zip(names, np.array_split(self.data, len(names), axis=1)):
                 self.fflist[n] = m
             self.qsqlist = list(f['qsqlist'][...])
         self.mB = mB
         #self.mBstar = mBstar
-        if poles == None:
+        if poles is None:
             self.poles = np.array(len(names)*[np.inf])
         else:
             self.poles = poles
         self.mV = mV
         self.numalpha = numalpha
-        if alphalist == None:
+        if alphalist is None:
             self.alphalist = list(range(len(names)*numalpha))
         else:
             self.alphalist = alphalist
 
     def printalphas(self, shift=0):
-        return((ff,p,[x+shift for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)]]) for i,(p,ff) in enumerate(zip(self.poles, self.fflist)))
+        return((ff, p, [x+shift for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)]]) for i, (p, ff) in enumerate(zip(self.poles, self.fflist)))
 
-    def z(self,qsq):
+    def z(self, qsq):
         tplus = (self.mB+self.mV)**2
         tminus =(self.mB-self.mV)**2
         t0 = tplus*(1-np.sqrt(1-tminus/tplus))
@@ -47,7 +47,7 @@ class funfits:
 
     def fit2pole2(self, qsq, *alpha, piecenum=0):
         #return (alpha[0] + alpha[1]*qsq**2 + alpha[2]*qsq**4)/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2)
-        res = alpha[0]/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2) 
+        res = alpha[0]/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2)
         if len(alpha) > 1:
             for a in np.split(np.array(alpha[1:]),len(alpha[1:])//2):
                 res += a[0]/(1-qsq/a[1]**2)
@@ -70,14 +70,14 @@ class funfits:
 
     def genfit(self, lb, ub, fitform='z'):
         self.fitform = fitform
-        if fitform=='z':
+        if fitform == 'z':
             fun = self.fitfun
             self.fitted = self.fitfun2
             p0 = np.ones(max(self.alphalist) + 1) 
-        elif fitform=='2pole':
+        elif fitform == '2pole':
             fun = self.fit2pole
             self.fitted = self.fit2pole2
-            p0 = np.array(len(self.fflist)*[1.,1.,1000.])
+            p0 = np.array(len(self.fflist)*[1.,1.,10000.])
         else:
             fun = self.piecewise
             self.fitted = self.poly
@@ -90,9 +90,9 @@ class funfits:
         #cov = np.mean([np.outer(v,v) for v in data], axis=0) - np.outer(sampleav, sampleav)
         cov = np.std(data, axis=0)
         self.fit = [curve_fit(fun, np.array(len(self.fflist)*self.qsqlist[lb:ub]), sample, \
-        p0=p0,sigma = cov)[0] for sample in data]
+        p0=p0, sigma=cov)[0] for sample in data]
         self.fit_cv = curve_fit(fun, np.array(len(self.fflist)*self.qsqlist[lb:ub]), sampleav, \
-        p0=p0 ,sigma = cov)[0]
+        p0=p0 , sigma=cov)[0]
         return
 
     def plot(self, outfile):
@@ -108,17 +108,19 @@ class funfits:
             alphaval = [self.fit_cv[x] for x in alphas]
             yvfit = self.fitted(xv, *alphaval)
             yverr = np.std([self.fitted(xv,*([f[x] for x in alphas])) for f in self.fit], axis = 0)
-            chisq = self.chisqdof(alphaval,cv,err,self.poles[i])
 
             plt.plot(xv,yvfit)
             if self.fitform == 'z':
                 plotlabel = '+'.join(['({1:.2f})$z^{0}$'.format(i,j) for i,j in enumerate(alphaval)])
-                plt.title('$\chi^2/dof = {:.2e}, residue = {}$'.format(chisq,self.poly(self.z(self.poles[i]**2)-self.z(0),*alphaval)))
+                chisq = self.chisqdof(alphaval,cv,err,self.poles[i])
+                residue = self.poly(self.z(self.poles[i]**2)-self.z(0),*alphaval)
+                reserr = np.std([self.poly(self.z(self.poles[i]**2) - self.z(0),*([f[x] for x in alphas])) for f in self.fit], axis = 0)
+                plt.title('$\chi^2/dof$ = {:.2e}, residue = {:.3f} +- {:.3f}'.format(chisq,residue,reserr))
             else:
                 plotlabel = '{:.2f}/(1+q2/{:.2f}$^2$)'.format(alphaval[0], self.poles[i])
                 if len(alphaval) > 1:
                     for a in np.split(np.array(alphaval[1:]), len(alphaval[1:])//2):
-                        plotlabel += ' + {:.2f}/(1+q2/{:.2f}$^2$)'.format(*a)
+                        plotlabel += ' + {:.8f}/(1+q2/{:.8f}$^2$)'.format(*a)
             plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label=plotlabel)
             plt.legend()
             plt.savefig('{}/{}.pdf'.format(outfile,name))
@@ -126,7 +128,8 @@ class funfits:
 
     def chisqdof(self, alphaval, cv, err, pole):
         self.mBstar = np.array((self.ub-self.lb)*[pole])
-        return np.sum((self.fitted(np.array(self.qsqlist[self.lb:self.ub]),*alphaval) - cv[self.lb:self.ub])**2/err[self.lb:self.ub]**2) / (self.ub-self.lb-self.numalpha)
+        return np.sum((self.fitted(np.array(self.qsqlist[self.lb:self.ub]), *alphaval) \
+                - cv[self.lb:self.ub])**2/err[self.lb:self.ub]**2) / (self.ub-self.lb-self.numalpha)
 
 
     def covalpha(self, *other):
@@ -137,7 +140,7 @@ class funfits:
         if other == ():
             fit = self.fit
         else:
-            fit = np.concatenate([self.fit] + [x.fit for x in list(other)] ,axis=1)
+            fit = np.concatenate([self.fit] + [x.fit for x in list(other)] , axis=1)
 
         alphaav = np.mean(fit, axis = 0)
-        return np.mean([np.outer(f,f) for f in fit], axis=0) - np.outer(alphaav,alphaav)
+        return np.mean([np.outer(f, f) for f in fit], axis=0) - np.outer(alphaav, alphaav)
