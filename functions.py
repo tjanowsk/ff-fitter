@@ -73,35 +73,64 @@ class Fitter:
         self.sampleNumber = 0
         self.fit = None
 
-    def splitParameters(self, parameters):
-        splits = np.cumsum([self.formFactors[ff].numParams for ff in self.formFactors], axis=-1)
-        if len(self.formFactors) == 1:
-            return [parameters]
-        return np.split(parameters, splits, axis=-1)
+    def constraintsToSets(self):
+        pat = re.compile("[a-zA-Z0-9_-]+(?=\([a-zA-Z0-9_.*-]+\))")
+        pat2 = re.compile("(?<=<)[a-zA-Z0-9_-]+(?=>)")
+        return [ [set(pat.findall(c)),c] for c in self.constraints if pat.findall(c) != []] +\
+                 [ [set(pat2.findall(c)),c] for c in self.constraints if pat2.findall(c) != []]
 
-    def evalConstraints(self, parameterSplits):
-        paramDict = {key:item for key,item in zip(self.formFactors, parameterSplits)}
+    def maximalSets(self):
+        setList = self.constraintsToSets()
+        result = []
+        while setList != []:
+            ff, constr = setList.pop()
+            constr = [constr,]
+            for ff2, c2 in reversed(setList):
+                if ff.intersection(ff2) != set():
+                    ff = ff.union(ff2)
+                    constr.append(c2)
+                    setList.remove([ff2,c2])
+            result.append([ff, constr])
+        return [[list(r[0]), list(r[1])] for r in result]
+    
+    def splitParameters(self, parameters):
+        splits = np.cumsum([self.formFactors[ff].numParams for ff in self.partialfflist], axis=-1)
+        if len(self.partialfflist) == 1:
+            return {self.partialfflist[0]: parameters}
+        parameterSplits = np.split(parameters, splits, axis=-1)
+        return {key:item for key,item in zip(self.partialfflist, parameterSplits)}
+
+    def evalConstraints(self, paramDict):
         BIGNUMBER = 1e8
         res = []
-        for constraint in self.constraints:
+        for constraint in self.partialconstrs:
             constraint = re.sub("([0-9A-Za-z_-]+)\(([0-9A-Za-z_*.-]+)\)", "self.formFactors[\"\g<1>\"].function(\g<2>, paramDict[\"\g<1>\"])", constraint)
             constraint = re.sub("<([0-9A-Za-z_-]+)>", "self.formFactors[\"\g<1>\"].residue(paramDict[\"\g<1>\"])", constraint)
             res.append(BIGNUMBER*(eval(constraint)))
         return np.array(res)
 
     def calculateResidue(self, parameters):
-        parameterSplits = self.splitParameters(parameters)
-        result = np.concatenate([self.formFactors[ff].calculateResidue(self.sampleNumber, param) for ff, param in zip(self.formFactors, parameterSplits)] +
-                [self.evalConstraints(parameterSplits)])
+        paramDict = self.splitParameters(parameters)
+        result = np.concatenate([self.formFactors[ff].calculateResidue(self.sampleNumber, paramDict[ff]) for ff in self.partialfflist] +
+                [self.evalConstraints(paramDict)])
         return result
 
-    def generateFit(self):
-        p0 = np.ones(np.sum([self.formFactors[ff].numParams for ff in self.formFactors]))
-        self.fit = []
-        for self.sampleNumber in range(self.NumberOfSamples):
-            self.fit.append( least_squares(self.calculateResidue, p0).x)
-        parameterSplits = self.splitParameters(self.fit)
-        self.fit = {key:item for key, item in zip(self.formFactors, parameterSplits)}
+    def generateFit(self, verbose=True):
+        maxSets = self.maximalSets()
+        constrainedFFs = np.concatenate([ff for ff,c in maxSets])
+        for ff in self.formFactors:
+            if (ff not in constrainedFFs):
+                maxSets.append([[ff],[]])
+        self.fit = {key:[] for key in self.formFactors}
+
+        for self.partialfflist, self.partialconstrs in maxSets:
+            if(verbose):
+                print("Now fitting FFs:\n",self.partialfflist, "\n subject to constraints: \n", self.partialconstrs)
+            for self.sampleNumber in range(self.NumberOfSamples):
+                p0 = np.ones(np.sum([self.formFactors[ff].numParams for ff in self.partialfflist]))
+                fittedPars = self.splitParameters(least_squares(self.calculateResidue, p0).x)
+                for key in fittedPars:
+                    self.fit[key].append(fittedPars[key])
 
     def meanFitParameters(self):
         return {key: np.mean(self.fit[key], axis=0) for key in self.fit}

@@ -36,7 +36,6 @@
         }
     },
     "constraints":[
-        "P_Bd_im(20.0)",
         "P_Bd_re(16.0) + 0.05",
         "Tperp_Bd(0) - Tpara_Bd(0)",
         "<Tpara_Bd> - 0.5"
