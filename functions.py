@@ -1,146 +1,155 @@
 import numpy as np
 import h5py
-from scipy.optimize import curve_fit
+from scipy.optimize import least_squares
 from matplotlib import pyplot as plt
+import json, re
+from itertools import cycle
 
-class funfits:
-    def __init__(self, filename, names, numalpha=3, alphalist=None,  mB=5.28, poles=None, mV=0.77):
-        self.names = names
-        self.fflist = {x:0 for x in names}
-        with h5py.File(filename, 'r') as f:
-            self.data = f['results'][...]
-            for n, m in zip(names, np.array_split(self.data, len(names), axis=1)):
-                self.fflist[n] = m
-            self.qsqlist = list(f['qsqlist'][...])
+class FormFactor:
+    def __init__(self, qsqlist, samples, mB, mpole, fitForm, numParams, lb, ub, mV=0.77):
+        self.qsqlist = np.array(qsqlist)
+        self.samples = np.array(samples)
+        self.lb = lb
+        self.ub = ub
         self.mB = mB
-        #self.mBstar = mBstar
-        if poles is None:
-            self.poles = np.array(len(names)*[np.inf])
-        else:
-            self.poles = poles
         self.mV = mV
-        self.numalpha = numalpha
-        if alphalist is None:
-            self.alphalist = list(range(len(names)*numalpha))
-        else:
-            self.alphalist = alphalist
-
-    def printalphas(self, shift=0):
-        return((ff, p, [x+shift for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)]]) for i, (p, ff) in enumerate(zip(self.poles, self.fflist)))
-
+        self.mpole = mpole
+        self.fitForm = fitForm
+        self.numParams = numParams
+        self.errors = None
+    def calculateErrors(self):
+        self.errors = np.std(self.samples, axis=0, dtype=np.float64)
+    def calculateResidue(self, sampleNumber, parameters):
+        if self.errors is None:
+            self.calculateErrors()
+        result = (self.function(self.qsqlist[self.lb:self.ub], parameters) - self.samples[sampleNumber, self.lb:self.ub])/self.errors[self.lb:self.ub]
+        return result
     def z(self, qsq):
         tplus = (self.mB+self.mV)**2
         tminus =(self.mB-self.mV)**2
         t0 = tplus*(1-np.sqrt(1-tminus/tplus))
         return (np.sqrt(tplus-qsq)-np.sqrt(tplus-t0))/(np.sqrt(tplus-qsq) + np.sqrt(tplus-t0))
-
-    def fitfun(self, qsq, *alpha):
-        xargs = self.z(qsq)-self.z(0)
-        return self.piecewise(xargs, self.poly, *alpha)/(1-qsq/self.mBstar**2)
-
-    def fitfun2(self, qsq, *alpha):
-        xargs = self.z(qsq)-self.z(0)
-        return self.poly(xargs, *alpha)/(1-qsq/self.mBstar**2)
-
-    def fit2pole(self, qsq, *alpha):
-        return self.piecewise(qsq, self.fit2pole2, *alpha)
-
-    def fit2pole2(self, qsq, *alpha, piecenum=0):
-        #return (alpha[0] + alpha[1]*qsq**2 + alpha[2]*qsq**4)/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2)
-        res = alpha[0]/(1-qsq/self.mBstar[piecenum:piecenum+len(qsq)]**2)
-        if len(alpha) > 1:
-            for a in np.split(np.array(alpha[1:]),len(alpha[1:])//2):
-                res += a[0]/(1-qsq/a[1]**2)
-        return res
-
-    def poly(self, z, *alpha, piecenum=0):
-        ''' Returns a polynomial \alpha_i z^i'''
+    def poly(self, parameters, x):
         res = 0
-        for i, an in enumerate(alpha):
-            res += an*z**i
+        for n, a in enumerate(parameters):
+            res += a*x**n
         return res
+    def function(self, qsq, parameters):
+        return 1.0/(1.0 - qsq/self.mpole**2) * self.poly(parameters, self.z(qsq) - self.z(0))
+    def residue(self, parameters):
+        return -self.mpole**2 * self.poly(parameters, self.z(self.mpole**2) - self.z(0))
 
-    def piecewise(self, z, fun, *alpha):
+class Fitter:
+    def __init__(self, jsonFilename):
+        def getbounds(qsqlist, l, u):
+            for i, it in enumerate(qsqlist):
+                if it >= l:
+                    lb = i
+                    break
+            for i, it in reversed(list(enumerate(qsqlist))):
+                if it <= u:
+                    ub = i+1
+                    break
+            return (lb, ub)
+        with open(jsonFilename, "r") as f:
+            input = json.load(f)
+
+        self.constraints = input["constraints"]
+        self.formFactors = {}
+        for dataFilename in input:
+            if dataFilename == "constraints":
+                continue
+            with h5py.File(dataFilename, 'r') as f:
+                qsqlist = list(f['qsqlist'][...])
+                data = {key: f[key][...] for key in f}
+                for key in input[dataFilename]:
+                    mB = np.float(input[dataFilename][key]["mB"])
+                    mpole = np.float(input[dataFilename][key]["m_pole"])
+                    numParams = np.int(input[dataFilename][key]["num_pars"])
+                    fitForm = input[dataFilename][key]["fit_form"]
+                    lb, ub = getbounds(qsqlist, np.int(input[dataFilename][key]["lb"]), np.int(input[dataFilename][key]["ub"]))
+                    self.formFactors[key] = FormFactor(qsqlist, data[key], mB, mpole, fitForm, numParams, lb, ub)
+        self.NumberOfSamples = len(self.formFactors[list(self.formFactors.keys())[0]].samples)
+        self.sampleNumber = 0
+        self.fit = None
+
+    def splitParameters(self, parameters):
+        splits = np.cumsum([self.formFactors[ff].numParams for ff in self.formFactors], axis=-1)
+        if len(self.formFactors) == 1:
+            return [parameters]
+        return np.split(parameters, splits, axis=-1)
+
+    def evalConstraints(self, parameterSplits):
+        paramDict = {key:item for key,item in zip(self.formFactors, parameterSplits)}
+        BIGNUMBER = 1e8
         res = []
-        for i in range(len(self.fflist)):
-            numq = self.ub - self.lb #len(self.qsqlist)
-            alphas = [alpha[x] for x in self.alphalist[self.numalpha*i:self.numalpha*(i+1)] ]
-            res.extend(fun(z[numq*i:numq*(i+1)], *alphas, piecenum=i))
+        for constraint in self.constraints:
+            constraint = re.sub("([0-9A-Za-z_-]+)\(([0-9A-Za-z_*.-]+)\)", "self.formFactors[\"\g<1>\"].function(\g<2>, paramDict[\"\g<1>\"])", constraint)
+            constraint = re.sub("<([0-9A-Za-z_-]+)>", "self.formFactors[\"\g<1>\"].residue(paramDict[\"\g<1>\"])", constraint)
+            res.append(BIGNUMBER*(eval(constraint)))
         return np.array(res)
 
-    def genfit(self, lb, ub, fitform='z'):
-        self.fitform = fitform
-        if fitform == 'z':
-            fun = self.fitfun
-            self.fitted = self.fitfun2
-            p0 = np.ones(max(self.alphalist) + 1) 
-        elif fitform == '2pole':
-            fun = self.fit2pole
-            self.fitted = self.fit2pole2
-            p0 = np.array(len(self.fflist)*[1.,1.,10000.])
-        else:
-            fun = self.piecewise
-            self.fitted = self.poly
-        self.lb = lb
-        ub = min(ub,len(self.qsqlist))
-        self.ub = ub
-        self.mBstar = np.concatenate([(ub-lb)*[x] for x in self.poles])
-        data = np.concatenate([self.fflist[x][:,lb:ub] for x in self.names], axis=1)
-        sampleav = np.mean(data, axis=0)
-        #cov = np.mean([np.outer(v,v) for v in data], axis=0) - np.outer(sampleav, sampleav)
-        cov = np.std(data, axis=0)
-        self.fit = [curve_fit(fun, np.array(len(self.fflist)*self.qsqlist[lb:ub]), sample, \
-        p0=p0, sigma=cov)[0] for sample in data]
-        self.fit_cv = curve_fit(fun, np.array(len(self.fflist)*self.qsqlist[lb:ub]), sampleav, \
-        p0=p0 , sigma=cov)[0]
-        return
+    def calculateResidue(self, parameters):
+        parameterSplits = self.splitParameters(parameters)
+        result = np.concatenate([self.formFactors[ff].calculateResidue(self.sampleNumber, param) for ff, param in zip(self.formFactors, parameterSplits)] +
+                [self.evalConstraints(parameterSplits)])
+        return result
 
-    def plot(self, outfile):
-        for i, name in enumerate(self.names):
-            cv = np.mean(self.fflist[name], axis = 0)
-            err = np.std(self.fflist[name], axis = 0)
+    def generateFit(self):
+        p0 = np.ones(np.sum([self.formFactors[ff].numParams for ff in self.formFactors]))
+        self.fit = []
+        for self.sampleNumber in range(self.NumberOfSamples):
+            self.fit.append( least_squares(self.calculateResidue, p0).x)
+        parameterSplits = self.splitParameters(self.fit)
+        self.fit = {key:item for key, item in zip(self.formFactors, parameterSplits)}
+
+    def meanFitParameters(self):
+        return {key: np.mean(self.fit[key], axis=0) for key in self.fit}
+
+    def covarianceMatrix(self):
+        def cov(samples1, samples2):
+            sampleAverage1 = np.mean(samples1, axis=0)
+            sampleAverage2 = np.mean(samples2, axis=0)
+            return np.mean([np.outer(x, y) for x, y in zip(samples1, samples2)], axis=0) - np.outer(sampleAverage1, sampleAverage2)
+        return {name1: {name2: cov(self.fit[name1], self.fit[name2]) for name2 in self.fit} for name1 in self.fit}
+
+    def getResidues(self):
+        residues = {name:[self.formFactors[name].residue(sample) for sample in self.fit[name]] for name in self.formFactors}
+        return {name: (np.mean(residues[name]), np.std(residues[name])) for name in residues}
+
+    def plot(self, fflist):
+        colorCycler = cycle("rbgcmyk")
+        for i, name in enumerate(fflist):
+            color = colorCycler.__next__()
+
+            cv = np.mean(self.formFactors[name].samples, axis=0)
+            err = np.std(self.formFactors[name].samples, axis=0)
             plt.xlabel('$q^2$')
-            plt.ylabel(name)
-            plt.errorbar(self.qsqlist, cv ,yerr = err, fmt='.', label='data')
-            xv = np.arange(self.qsqlist[self.lb], self.qsqlist[self.ub-1]+0.1, 0.1)
-            self.mBstar = np.array(len(xv)*[self.poles[i]])
-            alphas = self.alphalist[self.numalpha*i:self.numalpha*(i+1)] 
-            alphaval = [self.fit_cv[x] for x in alphas]
-            yvfit = self.fitted(xv, *alphaval)
-            yverr = np.std([self.fitted(xv,*([f[x] for x in alphas])) for f in self.fit], axis = 0)
 
-            plt.plot(xv,yvfit)
-            if self.fitform == 'z':
-                plotlabel = '+'.join(['({1:.2f})$z^{0}$'.format(i,j) for i,j in enumerate(alphaval)])
-                chisq = self.chisqdof(alphaval,cv,err,self.poles[i])
-                residue = self.poly(self.z(self.poles[i]**2)-self.z(0),*alphaval)
-                reserr = np.std([self.poly(self.z(self.poles[i]**2) - self.z(0),*([f[x] for x in alphas])) for f in self.fit], axis = 0)
-                plt.title('$\chi^2/dof$ = {:.2e}, residue = {:.3f} +- {:.3f}'.format(chisq,residue,reserr))
-            else:
-                plotlabel = '{:.2f}/(1+q2/{:.2f}$^2$)'.format(alphaval[0], self.poles[i])
-                if len(alphaval) > 1:
-                    for a in np.split(np.array(alphaval[1:]), len(alphaval[1:])//2):
-                        plotlabel += ' + {:.8f}/(1+q2/{:.8f}$^2$)'.format(*a)
-            plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color='orange', alpha = 0.7, label=plotlabel)
-            plt.legend()
-            plt.savefig('{}/{}.pdf'.format(outfile,name))
-            plt.show()
+            ff = self.formFactors[name]
+            qsqlist = np.array(self.formFactors[name].qsqlist)
+            lb = self.formFactors[name].lb
+            ub = self.formFactors[name].ub
 
-    def chisqdof(self, alphaval, cv, err, pole):
-        self.mBstar = np.array((self.ub-self.lb)*[pole])
-        return np.sum((self.fitted(np.array(self.qsqlist[self.lb:self.ub]), *alphaval) \
-                - cv[self.lb:self.ub])**2/err[self.lb:self.ub]**2) / (self.ub-self.lb-self.numalpha)
+            plt.errorbar(qsqlist, cv, yerr=err, fmt='.', label=name, color=color)
+            xv = np.arange(qsqlist[lb], qsqlist[ub-1]+0.1, 0.1)
+            xv_below = np.arange(min(qsqlist),qsqlist[lb] + 0.1, 0.1) 
+            xv_above = np.arange(qsqlist[ub-1] + 0.1, max(qsqlist) + 0.1, 0.1)
 
+            #alphadict = {n:params for n, params in zip(self.formFactors, self.splitParameters(self.fit))}
+            yvfit = ff.function(xv, np.mean(self.fit[name], axis=0))
+            yvfit_below = ff.function(xv_below, np.mean(self.fit[name], axis=0))
+            yvfit_above = ff.function(xv_above, np.mean(self.fit[name], axis=0))
 
-    def covalpha(self, *other):
-        if self.fit == None:
-            print('Do the fit first')
-            return
+            yverr = np.std([ff.function(xv, sample) for sample in self.fit[name]], axis=0)
+            yverr_below = np.std([ff.function(xv_below, sample) for sample in self.fit[name]], axis=0)
+            yverr_above = np.std([ff.function(xv_above, sample) for sample in self.fit[name]], axis=0)
 
-        if other == ():
-            fit = self.fit
-        else:
-            fit = np.concatenate([self.fit] + [x.fit for x in list(other)] , axis=1)
-
-        alphaav = np.mean(fit, axis = 0)
-        return np.mean([np.outer(f, f) for f in fit], axis=0) - np.outer(alphaav, alphaav)
+            plt.plot(xv, yvfit, color=color)
+            plt.plot(xv_below, yvfit_below, '--', color=color)
+            plt.plot(xv_above, yvfit_above, '--', color=color)
+            plt.fill_between(xv, yvfit-yverr, yvfit+yverr, color=color, alpha=0.6)
+            plt.fill_between(xv_below, yvfit_below-yverr_below, yvfit_below+yverr_below, color=color, alpha=0.3)
+            plt.fill_between(xv_above, yvfit_above-yverr_above, yvfit_above+yverr_above, color=color, alpha=0.3)
+        plt.legend()
+        plt.show()

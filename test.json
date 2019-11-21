@@ -1,0 +1,44 @@
+{
+    "../res_28oct.h5":{
+        "P_Bd_re":{
+            "mB": 5.28,
+            "m_pole": "inf",
+            "num_pars": 3,
+            "fit_form": "z",
+            "lb": 14,
+            "ub": 28
+        },
+        "P_Bd_im":{
+            "mB": 5.28,
+            "m_pole": "inf",
+            "num_pars": 4,
+            "fit_form": "z",
+            "lb": 14,
+            "ub": 22
+        }
+    },
+    "../res_17sep.h5":{
+        "Tpara_Bd":{
+            "mB": 5.28,
+            "m_pole": 5.324,
+            "num_pars": 3,
+            "fit_form": "z",
+            "lb": 5,
+            "ub": 17
+        },
+        "Tperp_Bd":{
+            "mB": 5.28,
+            "m_pole": 5.721,
+            "num_pars": 3,
+            "fit_form": "z",
+            "lb": 5,
+            "ub": 17
+        }
+    },
+    "constraints":[
+        "P_Bd_im(20.0)",
+        "P_Bd_re(16.0) + 0.05",
+        "Tperp_Bd(0) - Tpara_Bd(0)",
+        "<Tpara_Bd> - 0.5"
+    ]
+}
