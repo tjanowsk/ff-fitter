@@ -21,6 +21,14 @@ class FitForm:
         Returns the residue given the set of params
         '''
 
+def fit_form_factory(fit_form_name: str, *args) -> FitForm:
+    '''
+    Fit form factory
+    '''
+    if fit_form_name == 'z':
+        return FitFormZExp(*args)
+    raise ValueError(f'Unknown fit form {fit_form_name}')
+
 class FitFormZExp(FitForm):
     '''
     z-expansion

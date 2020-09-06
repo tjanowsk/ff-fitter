@@ -95,7 +95,7 @@ class FittedFormFactorSamples:
         '''
         Returns full covariance matrix
         '''
-        result = {}
+        result: Dict[str, Dict[str, List[List[float]]]] = {}
         for ff1 in self.samples:
             result[ff1] = {}
             for ff2 in self.samples:

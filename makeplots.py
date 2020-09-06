@@ -3,7 +3,6 @@ Main file for fitting and plotting form factors
 '''
 from sys import argv
 import numpy as np
-from functions import Fitter
 
 from components.analysis import Analysis
 from components.input_reader import JsonInputReader
@@ -16,22 +15,6 @@ if len(argv) != 2:
 
 inputfile = argv[1]
 
-fitter = Fitter(inputfile)
-fitter.generateFit()
-
-# Create a plot with two data sets together
-fitter.plot(["Tpara_Bd"])
-#fitter.plot(["P_Bd_im", "P_Bd_re"])
-
-# Or loop over all form facrots in the json file
-# for ff in fitter.formFactors:
-#     fitter.plot([ff])
-
-#outputFileName = inputfile[:-5] # Strip the .json
-print(fitter.meanFitParameters())
-print(fitter.covarianceMatrix())
-#print(fitter.getResidues())
-
 input_file_reader = JsonInputReader(argv[1])
 data_reader = H5DataReader(input_file_reader)
 analysis = Analysis(input_file_reader, data_reader)
@@ -42,5 +25,9 @@ for result in fit_results:
     print(result.full_covariance())
 
 plotter = Plotter(analysis.bare_form_factors, fit_results)
-plotter.add_form_factor('Tpara_Bd', np.arange(5., 25., 0.1))
+plotter.add_form_factor('Tpara_Bd', np.arange(0., 14., 0.1))
+plotter.show()
+plotter.add_form_factor('P_Bd_re', np.arange(
+    14., 25., 0.1), color='red', label='My custom P_Bd label')
+plotter.add_form_factor('P_Bd_im', np.arange(14., 25., 0.1))
 plotter.show()

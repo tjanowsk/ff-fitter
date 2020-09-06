@@ -7,7 +7,7 @@ import json
 import numpy as np
 from .model.constraint import Constraint
 from .model.data import FittedFormFactor
-from .model.fitform import FitFormZExp
+from .model.fitform import fit_form_factory
 
 class InputReader:
     '''
@@ -63,7 +63,8 @@ class JsonInputReader(InputReader):
         for filename in filenames:
             for form_factor in self.input[filename]:
                 input_parameters = self.input[filename][form_factor]
-                fit_form = FitFormZExp(
+                fit_form = fit_form_factory(
+                    input_parameters['fit_form'],
                     input_parameters['mB'],
                     0.77,
                     input_parameters['m_pole'],

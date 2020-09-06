@@ -24,8 +24,8 @@ class Analysis:
                 fit_group = ConstraintGroup()
                 fit_group.add_form_factor(ff)
                 self.fit_groups.append(fit_group)
-        for fg in self.fit_groups:
-            print(fg.constraints, fg.form_factor_names)
+        for fit_group in self.fit_groups:
+            print(fit_group.constraints, fit_group.form_factor_names)
         self.fitters = [FitSamples(
             self.bare_form_factors, fit_group, input_file_reader) for fit_group in self.fit_groups]
 
