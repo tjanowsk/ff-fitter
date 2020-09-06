@@ -1,0 +1,8 @@
+{
+  "python.autoComplete.extraPaths": [
+    "./components",
+    "./components/model"
+],
+"editor.detectIndentation": false,
+"python.linting.mypyEnabled": true
+}
