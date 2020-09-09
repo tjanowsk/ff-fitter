@@ -65,10 +65,8 @@ class JsonInputReader(InputReader):
                 input_parameters = self.input[filename][form_factor]
                 fit_form = fit_form_factory(
                     input_parameters['fit_form'],
-                    input_parameters['mB'],
-                    0.77,
-                    input_parameters['m_pole'],
-                    input_parameters['num_pars'])
+                    input_parameters
+                )
                 result[form_factor] = FittedFormFactor(
                     fit_form, np.ones(input_parameters['num_pars']))
         return result

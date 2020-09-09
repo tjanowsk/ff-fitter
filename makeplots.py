@@ -10,7 +10,7 @@ from components.data_reader import H5DataReader
 from components.plotter import Plotter
 
 if len(argv) != 2:
-    print("Usage: python {} <json file>".format(argv[0]))
+    print(f'Usage:\n python {argv[0]} <json file>')
     exit()
 
 inputfile = argv[1]

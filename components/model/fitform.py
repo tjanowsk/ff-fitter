@@ -2,7 +2,7 @@
 Classes that encode different fit forms.
 '''
 import abc
-from typing import List
+from typing import Dict, List
 import numpy as np
 
 class FitForm:
@@ -21,23 +21,27 @@ class FitForm:
         Returns the residue given the set of params
         '''
 
-def fit_form_factory(fit_form_name: str, *args) -> FitForm:
+def fit_form_factory(fit_form_name: str, args: Dict[str, str]) -> FitForm:
     '''
     Fit form factory
     '''
     if fit_form_name == 'z':
-        return FitFormZExp(*args)
+        return FitFormZExp(args)
     raise ValueError(f'Unknown fit form {fit_form_name}')
 
 class FitFormZExp(FitForm):
     '''
-    z-expansion
+    z-expansion, requires the following arguments:
+    mB - mass of B meson
+    mV - mass of rho
+    m_pole - pole mass (e.g. B*)
+    num_pars - number of fit parameters
     '''
-    def __init__(self, mB: float, mV: float, mpole: float, num_params: int):
-        self.mB = float(mB)
-        self.mV = float(mV)
-        self.mpole = float(mpole)
-        self.num_params = int(num_params)
+    def __init__(self, args: Dict[str, str]):
+        self.mB = float(args['mB'])
+        self.mV = float(args['mV'])
+        self.mpole = float(args['m_pole'])
+        self.num_params = int(args['num_pars'])
         self.tplus = (self.mB+self.mV)**2
         self.tminus = (self.mB-self.mV)**2
         self.t0 = self.tplus*(1-np.sqrt(1-self.tminus/self.tplus))
