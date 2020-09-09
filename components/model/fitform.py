@@ -51,7 +51,7 @@ class FitFormZExp(FitForm):
     def call(self, qsq: float, params: List[float]) -> float:
         if len(params) != self.num_params:
             raise ValueError(
-                f"Wrong number of parameters, expected {self.num_params} got {len(params)}")
+                f'Wrong number of parameters, expected {self.num_params} got {len(params)}')
         return 1.0/(1.0 - qsq/self.mpole**2) * self._poly(qsq, params)
 
     def residue(self, params: List[float]) -> float:

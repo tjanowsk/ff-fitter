@@ -48,7 +48,7 @@ class JsonInputReader(InputReader):
     Reads the input json file
     '''
     def __init__(self, input_file_name: str):
-        with open(input_file_name, "r") as file:
+        with open(input_file_name, 'r') as file:
             self.input = json.load(file)
 
     def get_input(self):
