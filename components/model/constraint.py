@@ -3,7 +3,7 @@ Class that defines a fit constraint
 '''
 from typing import Dict, List
 import re
-from .data import FittedFormFactor
+from .data import BareFormFactor, FittedFormFactor
 
 class Constraint:
     '''
@@ -18,12 +18,20 @@ class Constraint:
             r'<([0-9A-Za-z_-]+)>',
             r'form_factors["\g<1>"].residue()',
             self.constraint_expr)
+        self.constraint_expr = re.sub(
+            r'\[([0-9A-Za-z_-]+)\]',
+            r'bare_ff["\g<1>"].residue',
+            self.constraint_expr)
         self.ff_names = _get_form_factor_names(constraint_expr)
 
     def __repr__(self):
         return self.constraint_expr
 
-    def eval(self, form_factors: Dict[str, FittedFormFactor]) -> float:
+    def eval(
+            self,
+            form_factors: Dict[str, FittedFormFactor],
+            bare_ff: Dict[str, BareFormFactor]
+    ) -> float:
         '''
         Evaluates the constraint
         '''

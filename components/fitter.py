@@ -82,7 +82,8 @@ class FitOne:
                           self.bare_ff_errors[form_factor][lower:upper])
 
         for constr in self.constraint_group.constraints:
-            result.append(BIG_NUMBER*constr.eval(self.fitted_form_factors))
+            result.append(
+                BIG_NUMBER*constr.eval(self.fitted_form_factors, self.bare_form_factors))
 
         return result
 
