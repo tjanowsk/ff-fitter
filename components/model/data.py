@@ -12,7 +12,7 @@ class BareFormFactor:
     def __init__(self, qsqlist: List[float], values: List[float]):
         self.qsqlist = qsqlist
         self.values = np.array(values)[:len(qsqlist)]
-        self.residue = values[-1] if len(qsqlist) > len(values) else None
+        self.residue = values[-1] if len(qsqlist) < len(values) else None
 
     def __repr__(self):
         return str(self.values)
