@@ -8,6 +8,7 @@ from components.analysis import Analysis
 from components.input_reader import JsonInputReader
 from components.data_reader import H5DataReader
 from components.plotter import Plotter
+from components.utils import combine_results
 
 if len(argv) != 2:
     print(f'Usage:\n python {argv[0]} <json file>')
@@ -20,9 +21,9 @@ data_reader = H5DataReader(input_file_reader)
 analysis = Analysis(input_file_reader, data_reader)
 fit_results = analysis.fit()
 
-for result in fit_results:
-    print(result.full_mean())
-    print(result.full_covariance())
+combined_results = combine_results(fit_results)
+print(combined_results.full_mean())
+print(combined_results.full_covariance())
 
 plotter = Plotter(analysis.bare_form_factors, fit_results)
 plotter.add_form_factor('Tpara_Bd', np.arange(0., 14., 0.1))
